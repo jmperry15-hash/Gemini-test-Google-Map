@@ -1,0 +1,8 @@
+{
+  "name": "Distance Navigator",
+  "description": "Calculate and compare driving distances between a reference point and multiple destinations using Google Maps.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}
