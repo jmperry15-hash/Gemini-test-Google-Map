@@ -27,9 +27,10 @@ export default function App() {
                   <p>Get an API key from the <a href="https://console.cloud.google.com/google/maps-apis/start" target="_blank" rel="noopener" className="text-indigo-600 hover:underline font-medium">Google Maps Platform console</a>.</p>
                   <p className="text-xs font-bold text-slate-900 underline">IMPORTANT: You must enable these APIs:</p>
                   <ul className="text-xs list-disc list-inside space-y-1 text-slate-500">
-                    <li>Routes API (New)</li>
-                    <li>Places API (New)</li>
                     <li>Maps JavaScript API</li>
+                    <li>Routes API</li>
+                    <li>Places API (New)</li>
+                    <li>Geocoding API</li>
                   </ul>
                 </div>
               </div>

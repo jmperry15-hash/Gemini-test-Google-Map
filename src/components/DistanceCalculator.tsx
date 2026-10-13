@@ -1,15 +1,9 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useMapsLibrary, useMap, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 import { AddressInput } from './AddressInput';
-import { Plus, Trash2, Calculator, MapPin, Navigation, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Calculator, Navigation } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-interface CalculationResult {
-  address: string;
-  distance: string;
-  duration: string;
-  status: 'success' | 'error';
-}
+import { averageMiles, formatRouteResult, type CalculationResult } from '../routeMath';
 
 export const DistanceCalculator: React.FC = () => {
   const map = useMap();
@@ -22,19 +16,36 @@ export const DistanceCalculator: React.FC = () => {
   const [isCalculating, setIsCalculating] = useState(false);
   const [refLocation, setRefLocation] = useState<google.maps.LatLngLiteral | null>(null);
   const [errorLog, setErrorLog] = useState<string | null>(null);
+  const placedOriginRef = useRef<string | null>(null);
 
-  // Geocode the reference address to show on map
+  const handleOriginChange = (value: string, location?: google.maps.LatLngLiteral | null) => {
+    setReferenceAddress(value);
+    if (location) {
+      placedOriginRef.current = value;
+      setRefLocation(location);
+      setErrorLog(null);
+      return;
+    }
+    if (placedOriginRef.current && placedOriginRef.current !== value) {
+      placedOriginRef.current = null;
+    }
+  };
+
+  // Geocode typed origins. A place selected from suggestions already has coordinates.
   useEffect(() => {
-    if (!geocodingLib || !referenceAddress) {
+    if (!referenceAddress) {
+      placedOriginRef.current = null;
       setRefLocation(null);
       return;
     }
+    if (!geocodingLib || placedOriginRef.current === referenceAddress) return;
 
     const timer = setTimeout(() => {
       const geocoder = new geocodingLib.Geocoder();
-      geocoder.geocode({ address: referenceAddress }, (results, status) => {
-        if (status === 'OK' && results?.[0]) {
-          const loc = results[0].geometry.location;
+      geocoder.geocode({ address: referenceAddress }, (geocodeResults, status) => {
+        if (placedOriginRef.current === referenceAddress) return;
+        if (status === 'OK' && geocodeResults?.[0]) {
+          const loc = geocodeResults[0].geometry.location;
           setRefLocation({ lat: loc.lat(), lng: loc.lng() });
           setErrorLog(null);
         } else if (status !== 'OK' && referenceAddress.length > 5) {
@@ -66,9 +77,11 @@ export const DistanceCalculator: React.FC = () => {
   };
 
   const updateDestination = (index: number, value: string) => {
-    const newDests = [...destinations];
-    newDests[index] = value;
-    setDestinations(newDests);
+    setDestinations((current) => {
+      const next = [...current];
+      next[index] = value;
+      return next;
+    });
   };
 
   const calculateDistances = useCallback(async () => {
@@ -90,35 +103,15 @@ export const DistanceCalculator: React.FC = () => {
           const response = await routesLib.Route.computeRoutes({
             origin: referenceAddress,
             destination: dest,
-            travelMode: 'DRIVING' as any,
-            fields: ['distanceMeters', 'duration', 'status'], 
+            travelMode: 'DRIVING',
+            fields: ['distanceMeters', 'durationMillis'],
           });
 
-          if (response.routes && response.routes.length > 0) {
-            const route = response.routes[0] as any;
-            const distanceKm = (Number(route.distanceMeters) || 0) / 1000;
-            const distanceMiles = distanceKm * 0.621371;
-            
-            // duration is a string like "120s" in the new API or a Duration object
-            const durationLiteral = route.duration;
-            const durationSec = typeof durationLiteral === 'string' 
-              ? parseInt(durationLiteral) 
-              : Number(durationLiteral?.seconds || 0);
-            const durationMin = durationSec / 60;
-
-            return {
-              address: dest,
-              distance: `${distanceMiles.toFixed(1)} miles (${distanceKm.toFixed(1)} km)`,
-              duration: `${Math.round(durationMin)} mins`,
-              status: 'success' as const,
-            };
-          }
-          return {
-            address: dest,
-            distance: 'N/A',
-            duration: 'N/A',
-            status: 'error' as const,
-          };
+          const route = response.routes?.[0];
+          return formatRouteResult(dest, route && {
+            distanceMeters: route.distanceMeters,
+            durationMillis: route.durationMillis,
+          });
         } catch (error: any) {
           console.error(`Error calculating route to ${dest}:`, error);
           const errorMsg = error?.message || String(error);
@@ -144,12 +137,7 @@ export const DistanceCalculator: React.FC = () => {
     }
   }, [routesLib, referenceAddress, destinations]);
 
-  const avgDistance = results.length > 0
-    ? (results.reduce((acc, curr) => {
-        const dist = parseFloat(curr.distance);
-        return acc + (isNaN(dist) ? 0 : dist);
-      }, 0) / results.filter(r => r.status === 'success').length).toFixed(1)
-    : '0.0';
+  const avgDistance = averageMiles(results);
 
   return (
     <div className="flex flex-col h-screen overflow-hidden text-slate-900 bg-slate-50 font-sans">
@@ -186,7 +174,7 @@ export const DistanceCalculator: React.FC = () => {
               id="reference"
               label="Primary Origin Node"
               value={referenceAddress}
-              onChange={setReferenceAddress}
+              onChange={handleOriginChange}
               placeholder="Enter base address..."
             />
           </div>
@@ -276,7 +264,7 @@ export const DistanceCalculator: React.FC = () => {
                  <div className="w-1 h-1 bg-red-600 rounded-full"></div> Error Console
               </div>
               <p className="text-[11px] font-mono leading-tight">{errorLog}</p>
-              <p className="text-[8px] mt-2 opacity-60 italic">Check Google Cloud Console to ensure Routes API (New) is enabled.</p>
+              <p className="text-[8px] mt-2 opacity-60 italic">Check Google Cloud Console to ensure Routes API, Places API (New), and Geocoding API are enabled.</p>
             </motion.div>
           )}
         </aside>
