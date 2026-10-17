@@ -1,64 +1,180 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useMapsLibrary } from '@vis.gl/react-google-maps';
+import { useEffect, useRef, useState } from "react";
+import { useMapsLibrary } from "@vis.gl/react-google-maps";
+import { MapPin } from "lucide-react";
 
-interface AddressInputProps {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
+export interface AddressValue {
+  text: string;
+  place?: google.maps.places.Place;
+}
+interface Props {
   id: string;
+  label: string;
+  value: AddressValue;
+  onChange: (value: AddressValue) => void;
+  placeholder?: string;
+  disabled?: boolean;
 }
 
-export const AddressInput: React.FC<AddressInputProps> = ({ label, value, onChange, placeholder, id }) => {
-  const placesLib = useMapsLibrary('places');
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null);
+export function AddressInput({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  disabled,
+}: Props) {
+  const places = useMapsLibrary("places");
+  const [suggestions, setSuggestions] = useState<
+    google.maps.places.PlacePrediction[]
+  >([]);
+  const [active, setActive] = useState(-1);
+  const [focused, setFocused] = useState(false);
+  const [notice, setNotice] = useState("");
+  const revision = useRef(0);
+  const session = useRef<google.maps.places.AutocompleteSessionToken | null>(
+    null,
+  );
+  const callback = useRef(onChange);
+  callback.current = onChange;
 
   useEffect(() => {
-    if (!placesLib || !inputRef.current) return;
-
-    const options: google.maps.places.AutocompleteOptions = {
-      fields: ['formatted_address', 'geometry', 'name'],
-    };
-
-    const newAutocomplete = new placesLib.Autocomplete(inputRef.current, options);
-    setAutocomplete(newAutocomplete);
-
-    newAutocomplete.addListener('place_changed', () => {
-      const place = newAutocomplete.getPlace();
-      if (place.formatted_address) {
-        onChange(place.formatted_address);
-      } else if (place.name) {
-        onChange(place.name);
+    const current = ++revision.current;
+    setSuggestions([]);
+    setActive(-1);
+    if (
+      !places ||
+      !focused ||
+      disabled ||
+      value.place ||
+      value.text.trim().length < 3
+    )
+      return;
+    const timer = setTimeout(async () => {
+      try {
+        session.current ??= new places.AutocompleteSessionToken();
+        const response =
+          await places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+            input: value.text,
+            sessionToken: session.current,
+          });
+        if (current !== revision.current) return;
+        setSuggestions(
+          response.suggestions.flatMap((s) =>
+            s.placePrediction ? [s.placePrediction] : [],
+          ),
+        );
+        setNotice("");
+      } catch {
+        if (current === revision.current)
+          setNotice(
+            "Suggestions unavailable. You can still enter a full address.",
+          );
       }
-    });
-
+    }, 350);
     return () => {
-      if (newAutocomplete) {
-        google.maps.event.clearInstanceListeners(newAutocomplete);
-      }
+      clearTimeout(timer);
+      revision.current++;
     };
-  }, [placesLib]);
+  }, [places, value.text, value.place, focused, disabled]);
+
+  async function select(prediction: google.maps.places.PlacePrediction) {
+    const current = ++revision.current;
+    setSuggestions([]);
+    setActive(-1);
+    try {
+      const place = prediction.toPlace();
+      await place.fetchFields({ fields: ["formattedAddress", "location"] });
+      if (current !== revision.current) return;
+      callback.current({
+        text: place.formattedAddress || prediction.text.toString(),
+        place,
+      });
+      setNotice("");
+    } catch {
+      if (current === revision.current)
+        callback.current({ text: prediction.text.toString() });
+    } finally {
+      session.current = null;
+    }
+  }
 
   return (
-    <div className="flex flex-col gap-1 w-full">
-      <label htmlFor={id} className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest block mb-1">
-        {label}
-      </label>
-      <div className="relative">
+    <div
+      className="address-field"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
+      }}
+    >
+      <label htmlFor={id}>{label}</label>
+      <div className="input-wrap">
+        <MapPin size={18} aria-hidden="true" />
         <input
           id={id}
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="w-full border-2 border-slate-900 bg-slate-50 p-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-slate-400"
+          value={value.text}
+          disabled={disabled}
+          placeholder={placeholder || "Search a place or enter an address"}
+          autoComplete="off"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={suggestions.length > 0}
+          aria-controls={`${id}-options`}
+          aria-activedescendant={
+            active >= 0 ? `${id}-option-${active}` : undefined
+          }
+          aria-describedby={notice ? `${id}-notice` : undefined}
+          onFocus={() => setFocused(true)}
+          onChange={(e) => {
+            revision.current++;
+            callback.current({ text: e.target.value });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              revision.current++;
+              setSuggestions([]);
+              setActive(-1);
+            }
+            if (
+              suggestions.length &&
+              (e.key === "ArrowDown" || e.key === "ArrowUp")
+            ) {
+              e.preventDefault();
+              setActive(
+                (n) =>
+                  (n + (e.key === "ArrowDown" ? 1 : -1) + suggestions.length) %
+                  suggestions.length,
+              );
+            }
+            if (e.key === "Enter" && active >= 0 && suggestions[active]) {
+              e.preventDefault();
+              void select(suggestions[active]);
+            }
+          }}
         />
-        <div className="absolute top-0 right-0 h-full flex items-center pr-3 pointer-events-none">
-          <div className="w-1.5 h-1.5 rounded-full bg-indigo-600"></div>
-        </div>
       </div>
+      <ul
+        id={`${id}-options`}
+        role="listbox"
+        className={suggestions.length ? "suggestions" : "suggestions hidden"}
+      >
+        {suggestions.map((s, i) => (
+          <li
+            key={s.placeId}
+            id={`${id}-option-${i}`}
+            role="option"
+            aria-selected={active === i}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => void select(s)}
+            className={active === i ? "active" : ""}
+          >
+            {s.text.toString()}
+          </li>
+        ))}
+      </ul>
+      {notice && (
+        <p id={`${id}-notice`} className="field-note">
+          {notice}
+        </p>
+      )}
     </div>
   );
-};
+}
