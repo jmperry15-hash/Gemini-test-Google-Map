@@ -21,7 +21,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { AddressInput, type AddressValue } from "./AddressInput";
-import { RouteLine, TrafficLayer, ROUTE_COLORS } from "./RouteLine";
+import { RouteLine, ROUTE_COLORS } from "./RouteLine";
 import {
   calculateRoute,
   formatDuration,
@@ -284,7 +284,6 @@ export function DistanceCalculator({ hasKey }: { hasKey: boolean }) {
                   gestureHandling="cooperative"
                   style={{ width: "100%", height: "100%" }}
                 >
-                  <TrafficLayer />
                   <RouteLine results={results} />
                 </Map>
               ) : (
@@ -312,9 +311,6 @@ export function DistanceCalculator({ hasKey }: { hasKey: boolean }) {
               </span>
               <span>
                 <span className="legend-route" /> Driving route
-              </span>
-              <span>
-                <span className="legend-traffic" /> Live traffic
               </span>
               <span className="map-footer-note">Powered by Google Maps</span>
             </div>
@@ -420,19 +416,6 @@ export function DistanceCalculator({ hasKey }: { hasKey: boolean }) {
                               {formatDuration(r.durationMin!)}
                             </span>
                           )}
-                          {!r.error && r.traffic && (
-                            <span className={`traffic-badge ${r.traffic}`}>
-                              {r.traffic === "light"
-                                ? "Light traffic"
-                                : r.traffic === "moderate"
-                                  ? "Moderate traffic"
-                                  : "Heavy traffic"}
-                              {" · "}
-                              {Math.round(r.delayMin!) > 0
-                                ? `+${formatDuration(r.delayMin!)} vs. no traffic`
-                                : "no delay"}
-                            </span>
-                          )}
                         </td>
                         <td>
                           <span
@@ -479,9 +462,8 @@ export function DistanceCalculator({ hasKey }: { hasKey: boolean }) {
             </>
           )}
           <p className="results-note">
-            Drive times reflect current traffic when you calculate; the delay is
-            measured against the no-traffic time. Combined distance is the sum
-            of separate one-way trips.
+            Travel times exclude live traffic. Combined distance is the sum of
+            separate one-way trips.
           </p>
         </section>
         <footer className="footer">

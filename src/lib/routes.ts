@@ -1,5 +1,4 @@
 import type { AddressValue } from "../components/AddressInput";
-export type TrafficLevel = "light" | "moderate" | "heavy";
 export interface RouteResult {
   id: string;
   address: string;
@@ -7,9 +6,6 @@ export interface RouteResult {
   distanceMiles?: number;
   distanceKm?: number;
   durationMin?: number;
-  staticDurationMin?: number;
-  delayMin?: number;
-  traffic?: TrafficLevel;
   path: google.maps.LatLngLiteral[];
   warnings: string[];
   error?: string;
@@ -28,22 +24,13 @@ export function apiError(error: unknown): string {
     return "No driving route found. Try a more specific address or a reachable destination.";
   return "Could not calculate this route. Check the addresses and your connection, then try again.";
 }
-// Delay vs. the no-traffic time: under 10% (or 3 min) is light, under 25% moderate.
-export function trafficLevel(
-  delayMin: number,
-  staticMin: number,
-): TrafficLevel {
-  const ratio = staticMin > 0 ? delayMin / staticMin : 0;
-  if (delayMin < 3 || ratio < 0.1) return "light";
-  return ratio < 0.25 ? "moderate" : "heavy";
-}
 export async function calculateRoute(
   compute: (
     request: google.maps.routes.ComputeRoutesRequest,
   ) => Promise<{
     routes: readonly Pick<
       google.maps.routes.Route,
-      "distanceMeters" | "durationMillis" | "staticDurationMillis" | "path" | "warnings"
+      "distanceMeters" | "durationMillis" | "path" | "warnings"
     >[];
   }>,
   origin: AddressValue,
@@ -62,14 +49,8 @@ export async function calculateRoute(
       origin: origin.place || origin.text.trim(),
       destination: destination.place || destination.text.trim(),
       travelMode: "DRIVING",
-      routingPreference: "TRAFFIC_AWARE",
-      fields: [
-        "distanceMeters",
-        "durationMillis",
-        "staticDurationMillis",
-        "path",
-        "warnings",
-      ],
+      routingPreference: "TRAFFIC_UNAWARE",
+      fields: ["distanceMeters", "durationMillis", "path", "warnings"],
     });
     const route = routes[0];
     if (!route)
@@ -91,28 +72,11 @@ export async function calculateRoute(
           "Google returned incomplete distance or time data. Please try again.",
       };
     }
-    const durationMin = route.durationMillis / 60000;
-    const staticDurationMin =
-      route.staticDurationMillis != null &&
-      Number.isFinite(route.staticDurationMillis) &&
-      route.staticDurationMillis >= 0
-        ? route.staticDurationMillis / 60000
-        : undefined;
-    const delayMin =
-      staticDurationMin == null
-        ? undefined
-        : Math.max(0, durationMin - staticDurationMin);
     return {
       ...base,
       distanceMiles: route.distanceMeters! / 1609.344,
       distanceKm: route.distanceMeters! / 1000,
-      durationMin,
-      staticDurationMin,
-      delayMin,
-      traffic:
-        staticDurationMin == null
-          ? undefined
-          : trafficLevel(delayMin!, staticDurationMin),
+      durationMin: route.durationMillis / 60000,
       path: route.path?.map((p) => ({ lat: p.lat, lng: p.lng })) || [],
       warnings: route.warnings || [],
     };
