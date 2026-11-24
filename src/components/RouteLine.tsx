@@ -60,3 +60,14 @@ export function RouteLine({ results }: { results: RouteResult[] }) {
     </>
   );
 }
+
+export function TrafficLayer() {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    const layer = new google.maps.TrafficLayer();
+    layer.setMap(map);
+    return () => layer.setMap(null);
+  }, [map]);
+  return null;
+}
